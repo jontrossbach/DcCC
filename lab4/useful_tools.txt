@@ -1,2 +1,9 @@
+#incase of a rogue controller 
 sudo netstat -nltp
 sudo pkill
+
+#start mininet
+sudo mn --custom DiamondNet.py --mac --switch ovsk --controller remote
+
+#start controller
+ryu-manager --verbose ryu_controller2.py
