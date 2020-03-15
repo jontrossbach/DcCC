@@ -1,0 +1,8 @@
+List of challenges for the lab report (to be growed):
+
+1. While the official mininet VM uses python2 and OF1.0 by default, we find Ryu is distributed with more recent
+   versions of python and OF protocol.
+   
+   We decided to use python3 and OF1.3, but apply minimal changes to the old configured environment, which is the virtualbox mininet VM, and be able to use our local machine as a remote controller. So we started to install Ryu in python3 and seek a way of reconciling it with an mininet app. Here are what we did:
+   a. Knowing that OF1.3 is supported but requires enabled by mininet, we figured out the way to specify the OF protocol version either via mn launch tool or by running a script file.
+   b. We learn Ryu API through the official OF1.3 examples, and tested successfully with py2 OVSSwitches connected to a py3 Ryu controller. So that no need to reconfigure a new environment for mininet.
