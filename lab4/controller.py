@@ -59,7 +59,7 @@ class RemoteRYU(app_manager.RyuApp):
             host_dst = self.host_ip[ip_dst]
         
             pkt_tcp = pkt.get_protocol(tcp.tcp)
-            if pkt_tcp and (pkt_tcp.dst_port == 80) and (dpid == 1 or dpid == 3) and (host_src == 2 or host_src == 4) and (host_dst == 2 or host_dst == 4):              
+            if pkt_tcp and (pkt_tcp.dst_port == 80) and (dpid == 2 or dpid == 4) and (host_src == 1 or host_src == 3) and (host_dst == 1 or host_dst == 3):              
                 pkt_eth = pkt.get_protocol(ethernet.ethernet)
                 self._http_handler(msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, pkt_eth, pkt_ipv4)
             else:
