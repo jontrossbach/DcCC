@@ -59,11 +59,13 @@ class RemoteRYU(app_manager.RyuApp):
             host_dst = self.host_ip[ip_dst]
         
             pkt_tcp = pkt.get_protocol(tcp.tcp)
-            if pkt_tcp and (pkt_tcp.dst_port == 80) and (dpid == 2 or dpid == 4) and (host_src == 1 or host_src == 3) and (host_dst == 1 or host_dst == 3):              
+            sqn = pkt_tcp.seq
+            offset = pkt_tcp.offset
+            if pkt_tcp and (pkt_tcp.dst_port == 80) and (dpid == 1 or dpid == 3) and (host_src == 2 or host_src == 4) and (host_dst == 2 or host_dst == 4):              
                 pkt_eth = pkt.get_protocol(ethernet.ethernet)
-                self._http_handler(msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, pkt_eth, pkt_ipv4)
+                self._http_handler(msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, pkt_eth, pkt_ipv4, sqn, offset)
             else:
-                self._ipv4_handler(msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, host_src, host_dst)
+                self._ipv4_handler(msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, host_src, host_dst, sqn, offset)
 
     def _arp_handler(self, in_port, datapath, dpid, ofproto, parser, pkt_eth, pkt_arp):
         # confirm the target of arp request, and send an arp reply to answer call
@@ -80,9 +82,9 @@ class RemoteRYU(app_manager.RyuApp):
         self.logger.info("packet out (S%s): arp_reply src %s dst %s out_port %s\n", dpid, pkt_arp.dst_ip, pkt_arp.src_ip, in_port)
         datapath.send_msg(out)
 
-    def _http_handler(self, msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, pkt_eth, pkt_ipv4):
+    def _http_handler(self, msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, pkt_eth, pkt_ipv4, sqn, offset):
         print('dpid ', dpid)
-        self.logger.info("packet in (S%s): http src %s dst %s in_port %s", dpid, ip_src, ip_dst, in_port)
+        self.logger.info("packet in (S%s): http src %s dst %s in_port %s sqn %s offset %s", dpid, ip_src, ip_dst, in_port, sqn, offset)
         match = parser.OFPMatch(in_port=in_port, eth_type=ethernet.ether.ETH_TYPE_IP, ipv4_dst=ip_dst, ipv4_src=ip_src, ip_proto=ip_proto, tcp_dst=80)
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)]
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
@@ -93,7 +95,7 @@ class RemoteRYU(app_manager.RyuApp):
         pkt = packet.Packet()
         pkt.add_protocol(ethernet.ethernet(ethertype=pkt_eth.ethertype, dst=self.host_mac[dpid], src=pkt_eth.src))
         pkt.add_protocol(ipv4.ipv4(proto=ip_proto, src=ip_src, dst=list(self.host_ip.keys())[dpid-1]))
-        pkt.add_protocol(tcp.tcp(bits=tcp.TCP_RST))
+        pkt.add_protocol(tcp.tcp(bits=tcp.TCP_RST, ack=sqn))
         pkt.serialize()
 
         actions = [parser.OFPActionOutput(1, ofproto.OFPCML_NO_BUFFER)]
@@ -101,7 +103,7 @@ class RemoteRYU(app_manager.RyuApp):
         self.logger.info("packet out (S%s): http rst src %s dst %s out_port 1\n", dpid, ip_src, list(self.host_ip.keys())[dpid-1])
         datapath.send_msg(out)
 
-    def _ipv4_handler(self, msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, host_src, host_dst):
+    def _ipv4_handler(self, msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, host_src, host_dst, sqn, offset):
         if ip_proto == 1:
             ipv4_type = 'icmp'
         elif ip_proto == 6:
@@ -110,7 +112,7 @@ class RemoteRYU(app_manager.RyuApp):
             ipv4_type = 'udp'
         else:
             return
-        self.logger.info("packet in (S%s): %s src %s dst %s in_port %s", dpid, ipv4_type, ip_src, ip_dst, in_port)
+        self.logger.info("packet in (S%s): %s src %s dst %s in_port %s sqn %s offset %s", dpid, ipv4_type, ip_src, ip_dst, in_port, sqn, offset)
 
         # handle h1 and h4 udp case in particular
         if ipv4_type == 'udp' and (host_src == 1 or host_src == 4) and (host_dst == 1 or host_dst == 4):
