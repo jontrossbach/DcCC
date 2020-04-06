@@ -59,9 +59,9 @@ class RemoteRYU(app_manager.RyuApp):
             host_dst = self.host_ip[ip_dst]
         
             pkt_tcp = pkt.get_protocol(tcp.tcp)
-            if pkt_tcp and (pkt_tcp.dst_port == 80) and (dpid == 1 or dpid == 3) and (host_src == 2 or host_src == 4) and (host_dst == 2 or host_dst == 4):              
+            if pkt_tcp and (pkt_tcp.dst_port == 80) and ((dpid == 2 and host_src == 2) or (dpid == 4 and host_src == 4)):              
                 pkt_eth = pkt.get_protocol(ethernet.ethernet)
-                self._http_handler(msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, pkt_eth, pkt_ipv4)
+                self._http_handler(msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, pkt_eth, pkt_ipv4, pkt_tcp)
             else:
                 self._ipv4_handler(msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, host_src, host_dst)
 
@@ -80,7 +80,7 @@ class RemoteRYU(app_manager.RyuApp):
         self.logger.info("packet out (S%s): arp_reply src %s dst %s out_port %s\n", dpid, pkt_arp.dst_ip, pkt_arp.src_ip, in_port)
         datapath.send_msg(out)
 
-    def _http_handler(self, msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, pkt_eth, pkt_ipv4):
+    def _http_handler(self, msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, pkt_eth, pkt_ipv4, pkt_tcp):
         print('dpid ', dpid)
         self.logger.info("packet in (S%s): http src %s dst %s in_port %s", dpid, ip_src, ip_dst, in_port)
         match = parser.OFPMatch(in_port=in_port, eth_type=ethernet.ether.ETH_TYPE_IP, ipv4_dst=ip_dst, ipv4_src=ip_src, ip_proto=ip_proto, tcp_dst=80)
@@ -91,14 +91,14 @@ class RemoteRYU(app_manager.RyuApp):
         datapath.send_msg(mod)
         
         pkt = packet.Packet()
-        pkt.add_protocol(ethernet.ethernet(ethertype=pkt_eth.ethertype, dst=self.host_mac[dpid], src=pkt_eth.src))
-        pkt.add_protocol(ipv4.ipv4(proto=ip_proto, src=ip_src, dst=list(self.host_ip.keys())[dpid-1]))
-        pkt.add_protocol(tcp.tcp(bits=tcp.TCP_RST))
+        pkt.add_protocol(ethernet.ethernet(ethertype=pkt_eth.ethertype, dst=pkt_eth.src, src=pkt_eth.dst))
+        pkt.add_protocol(ipv4.ipv4(proto=ip_proto, src=ip_dst, dst=ip_src))
+        pkt.add_protocol(tcp.tcp(bits=tcp.TCP_RST|tcp.TCP_ACK, ack=pkt_tcp.seq+1, src_port=pkt_tcp.dst_port, dst_port=pkt_tcp.src_port))
         pkt.serialize()
 
         actions = [parser.OFPActionOutput(1, ofproto.OFPCML_NO_BUFFER)]
         out = parser.OFPPacketOut(datapath=datapath, buffer_id=ofproto.OFP_NO_BUFFER, in_port=ofproto.OFPP_CONTROLLER, actions=actions, data=pkt.data)
-        self.logger.info("packet out (S%s): http rst src %s dst %s out_port 1\n", dpid, ip_src, list(self.host_ip.keys())[dpid-1])
+        self.logger.info("packet out (S%s): http rst src %s dst %s out_port 1\n", dpid, ip_dst, ip_src)
         datapath.send_msg(out)
 
     def _ipv4_handler(self, msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, host_src, host_dst):
