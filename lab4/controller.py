@@ -119,8 +119,8 @@ class RemoteRYU(app_manager.RyuApp):
         self.logger.info("packet in (S%s): %s src %s dst %s in_port %s", dpid, ipv4_type, ip_src, ip_dst, in_port)
 
         # handle h1 and h4 udp case in particular
-        if ipv4_type == 'udp' and (host_src == 1 or host_src == 4 or host_dst == 1 or host_dst == 4):
-            match = parser.OFPMatch(in_port=in_port, eth_type=ethernet.ether.ETH_TYPE_IP, ipv4_dst=ip_dst, ipv4_src=ip_src, ip_proto=ip_proto)
+        if ipv4_type == 'udp' and (host_src == 1 or host_src == 4):
+            match = parser.OFPMatch(in_port=in_port, eth_type=ethernet.ether.ETH_TYPE_IP, ipv4_src=ip_src, ip_proto=ip_proto)
             inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, [])]
             mod = parser.OFPFlowMod(datapath=datapath, priority=2, match=match, instructions=inst)
             self.logger.info("add flow (S%s): UDP src %s dst %s drop\n", dpid, ip_src, ip_dst)
