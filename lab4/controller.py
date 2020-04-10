@@ -15,6 +15,7 @@ class RemoteRYU(app_manager.RyuApp):
         # register host ip & mac table.
         self.host_ip = dict([('10.0.0.%s'%(id+1), id+1) for id in range(4)])
         self.host_mac = dict([(id+1, ('00:00:00:00:00:0%s'%(id+1))) for id in range(4)])
+        self.http_flow_tuple = []
 
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def _switch_features_handler(self, ev):
@@ -46,7 +47,7 @@ class RemoteRYU(app_manager.RyuApp):
             # handle arp requests from hosts, but it's unnecessary if autosSetArp is enabled in mininet
             pkt_eth = pkt.get_protocol(ethernet.ethernet)
             pkt_arp = pkt.get_protocol(arp.arp)           
-            self.logger.info("packet in (S%s): arp_request src %s dst %s in_port %s", dpid, pkt_arp.src_ip, pkt_arp.dst_ip, in_port)
+            self.logger.info("packet in (S%s): ARP_request src %s dst %s in_port %s", dpid, pkt_arp.src_ip, pkt_arp.dst_ip, in_port)
             self._arp_handler(in_port, datapath, dpid, ofproto, parser, pkt_eth, pkt_arp)
         elif pkt.get_protocol(ipv4.ipv4):
             # install different rules as specified
@@ -59,7 +60,7 @@ class RemoteRYU(app_manager.RyuApp):
             host_dst = self.host_ip[ip_dst]
         
             pkt_tcp = pkt.get_protocol(tcp.tcp)
-            if pkt_tcp and (pkt_tcp.dst_port == 80) and ((dpid == 2 and host_src == 2) or (dpid == 4 and host_src == 4)):              
+            if pkt_tcp and (pkt_tcp.dst_port == 80) and (host_src == 2 or host_dst == 2 or host_src == 4 or host_dst == 4):              
                 pkt_eth = pkt.get_protocol(ethernet.ethernet)
                 self._http_handler(msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, pkt_eth, pkt_ipv4, pkt_tcp)
             else:
@@ -77,28 +78,33 @@ class RemoteRYU(app_manager.RyuApp):
 
         actions = [parser.OFPActionOutput(in_port, ofproto.OFPCML_NO_BUFFER)]
         out = parser.OFPPacketOut(datapath=datapath, buffer_id=ofproto.OFP_NO_BUFFER, in_port=ofproto.OFPP_CONTROLLER, actions=actions, data=pkt.data)
-        self.logger.info("packet out (S%s): arp_reply src %s dst %s out_port %s\n", dpid, pkt_arp.dst_ip, pkt_arp.src_ip, in_port)
+        self.logger.info("packet out (S%s): ARP_reply src %s dst %s out_port %s\n", dpid, pkt_arp.dst_ip, pkt_arp.src_ip, in_port)
         datapath.send_msg(out)
 
     def _http_handler(self, msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, pkt_eth, pkt_ipv4, pkt_tcp):
         print('dpid ', dpid)
-        self.logger.info("packet in (S%s): http src %s dst %s in_port %s", dpid, ip_src, ip_dst, in_port)
-        match = parser.OFPMatch(in_port=in_port, eth_type=ethernet.ether.ETH_TYPE_IP, ipv4_dst=ip_dst, ipv4_src=ip_src, ip_proto=ip_proto, tcp_dst=80)
-        actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)]
-        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
-        mod = parser.OFPFlowMod(datapath=datapath, priority=2, match=match, instructions=inst)
-        self.logger.info("add flow (S%s): http src %s dst %s out_port controller", dpid, ip_src, ip_dst)
-        datapath.send_msg(mod)
-        
+        self.logger.info("packet in (S%s): HTTP src %s dst %s in_port %s", dpid, ip_src, ip_dst, in_port)
+
+        if (dpid, ip_src, ip_dst) not in self.http_flow_tuple:
+            self.http_flow_tuple.append((dpid, ip_src, ip_dst))
+
+            # install the particular http policy on H2 and H4.
+            match = parser.OFPMatch(in_port=in_port, eth_type=ethernet.ether.ETH_TYPE_IP, ipv4_dst=ip_dst, ipv4_src=ip_src, ip_proto=ip_proto, tcp_dst=80)
+            actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)]
+            inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)]
+            mod = parser.OFPFlowMod(datapath=datapath, priority=2, match=match, instructions=inst)
+            self.logger.info("add flow (S%s): HTTP src %s dst %s out_port controller", dpid, ip_src, ip_dst)
+            datapath.send_msg(mod)    
+                
         pkt = packet.Packet()
         pkt.add_protocol(ethernet.ethernet(ethertype=pkt_eth.ethertype, dst=pkt_eth.src, src=pkt_eth.dst))
         pkt.add_protocol(ipv4.ipv4(proto=ip_proto, src=ip_dst, dst=ip_src))
         pkt.add_protocol(tcp.tcp(bits=tcp.TCP_RST|tcp.TCP_ACK, ack=pkt_tcp.seq+1, src_port=pkt_tcp.dst_port, dst_port=pkt_tcp.src_port))
         pkt.serialize()
 
-        actions = [parser.OFPActionOutput(1, ofproto.OFPCML_NO_BUFFER)]
+        actions = [parser.OFPActionOutput(in_port, ofproto.OFPCML_NO_BUFFER)]
         out = parser.OFPPacketOut(datapath=datapath, buffer_id=ofproto.OFP_NO_BUFFER, in_port=ofproto.OFPP_CONTROLLER, actions=actions, data=pkt.data)
-        self.logger.info("packet out (S%s): http rst src %s dst %s out_port 1\n", dpid, ip_dst, ip_src)
+        self.logger.info("packet out (S%s): HTTP RST src %s dst %s out_port 1\n", dpid, ip_dst, ip_src)
         datapath.send_msg(out)
 
     def _ipv4_handler(self, msg, in_port, datapath, dpid, ofproto, parser, ip_proto, ip_src, ip_dst, host_src, host_dst):
@@ -113,11 +119,11 @@ class RemoteRYU(app_manager.RyuApp):
         self.logger.info("packet in (S%s): %s src %s dst %s in_port %s", dpid, ipv4_type, ip_src, ip_dst, in_port)
 
         # handle h1 and h4 udp case in particular
-        if ipv4_type == 'udp' and (host_src == 1 or host_src == 4) and (host_dst == 1 or host_dst == 4):
+        if ipv4_type == 'udp' and (host_src == 1 or host_src == 4 or host_dst == 1 or host_dst == 4):
             match = parser.OFPMatch(in_port=in_port, eth_type=ethernet.ether.ETH_TYPE_IP, ipv4_dst=ip_dst, ipv4_src=ip_src, ip_proto=ip_proto)
             inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, [])]
             mod = parser.OFPFlowMod(datapath=datapath, priority=2, match=match, instructions=inst)
-            self.logger.info("add flow (S%s): udp src %s dst %s drop\n", dpid, ip_src, ip_dst)
+            self.logger.info("add flow (S%s): UDP src %s dst %s drop\n", dpid, ip_src, ip_dst)
             datapath.send_msg(mod)
             return
 
@@ -128,8 +134,15 @@ class RemoteRYU(app_manager.RyuApp):
             host_diff = abs(host_src - host_dst)
             if host_diff == 1:    # shortest path
                 out_port = (2,3)[host_src>host_dst]
-            elif host_diff == 2:  # specified clock-wise path
-                out_port = 3 if ipv4_type == 'udp' else 2    
+            elif host_diff == 2:  # assigned policies
+                if ipv4_type == 'icmp' or ipv4_type == 'tcp':
+                    out_port = 2 if host_src in (1, 2) else 3
+                elif ipv4_type == 'udp':
+                    out_port = 3 if host_src in (1, 2) else 2
+                else:
+                    print('Not recognized traffic')
+                    print('\n')
+                    return
             elif host_diff == 3:  # shortest path
                 out_port = (2,3)[host_src<host_dst]
 
