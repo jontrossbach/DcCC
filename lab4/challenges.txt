@@ -4,14 +4,14 @@ List of challenges for the lab report (to be growed):
    versions of python and OF protocol.
    
    We decided to use python3 and OF1.3, but apply minimal changes to the old configured environment, which is the 
-   virtualbox mininet VM, and be able to use our local machine as a remote controller. So we started to install Ryu 
-   in python3 and seek a way of reconciling it with a mininet app. Here are what we did:
+   virtualbox mininet VM, and use our local machine as a remote controller. So we started to install Ryu in python3 
+   and seek a way of reconciling it with a mininet app. Here are what we did:
 
    a. Knowing that OF1.3 is supported but requires enabled by mininet, we figured out the way to specify the OF 
    protocol version either via mn launch tool or by running a script file.
    
-   b. We learn Ryu API through the official OF1.3 examples, and tested successfully with py2 OVSSwitches connected 
-   to a py3 Ryu controller. So that no need to reconfigure a new environment for mininet.
+   b. We learned Ryu API through the official OF1.3 examples, and tested successfully with py2 OVSSwitches connected 
+   to a py3 Ryu controller. Thus no need to reconfigure a new environment for mininet.
 
 
 2. Need to take care of ARP request from hosts to perform an ICMP test, but the topology is a loop that disrupts the 
@@ -24,6 +24,6 @@ List of challenges for the lab report (to be growed):
 
 3. Particular handling of HTTP and UDP is a tricky part.
 
-   We know adding a flow-drop entry for HTTP would prevent forwarding to the controller from further occurence, so we 
-   added a flow-forward entry to redirect to the controller every time, with a higher priority over regular TCP packets.
-   For UDP drop, there is no drop action, so we made the action list empty, and worked it out.
+   We added a flow-forward entry to redirect specified http traffic to the controller every time, and only need to add 
+   once, with a higher priority over regular TCP packets. We also figured out the subtlety to construct a reset packet
+   for correct implementation. For UDP drop, there is no drop action, so we made the action list empty, and worked it out.
