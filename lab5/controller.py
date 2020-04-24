@@ -4,6 +4,7 @@ from ryu.controller import ofp_event
 from ryu.controller.handler import set_ev_cls, CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.lib.packet import packet, ethernet, tcp
 
+# the setting flag for multipath mode (True) or single path mode (False)
 MPATH = True
 
 class RemoteRYU(app_manager.RyuApp):
@@ -44,11 +45,17 @@ class RemoteRYU(app_manager.RyuApp):
         if pkt.get_protocol(tcp.tcp):
             pkt_tcp = pkt.get_protocol(tcp.tcp)
             self.logger.info("packet in (S%s): TCP in_port %s src_port %s dst_port %s", dpid, in_port, pkt_tcp.src_port, pkt_tcp.dst_port)
+
+            # the single or multi path part
             if MPATH:
+                # multi path, for s4 and s5, their output port will be decided by taking the modulo of the dst port to evenly spread the traffic
+                # since the port scanning range is a consecutive interval, e.g. 1-100
                 if dpid == 4 or dpid == 5:
                     out_port = 1 if in_port != 1 else pkt_tcp.dst_port%3+2
                 else:
                     out_port = 2 if in_port == 1 else 1
+
+                # single path
             else:
                 out_port = 2 if in_port == 1 else 1
 
